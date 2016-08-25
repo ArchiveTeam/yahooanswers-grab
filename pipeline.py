@@ -16,7 +16,6 @@ import subprocess
 import sys
 import time
 import string
-import urllib2
 
 import seesaw
 from seesaw.externalprocess import WgetDownload
@@ -59,7 +58,7 @@ if not WGET_LUA:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = "20160822.01"
+VERSION = "20160825.01"
 USER_AGENT = 'ArchiveTeam'
 TRACKER_ID = 'yahooanswers'
 TRACKER_HOST = 'tracker.archiveteam.org'
