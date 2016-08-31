@@ -58,7 +58,7 @@ if not WGET_LUA:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = "20160825.01"
+VERSION = "20160831.01"
 USER_AGENT = 'ArchiveTeam'
 TRACKER_ID = 'yahooanswers'
 TRACKER_HOST = 'tracker.archiveteam.org'
@@ -111,7 +111,7 @@ class PrepareDirectories(SimpleTask):
     def process(self, item):
         item_name = item["item_name"]
         escaped_item_name = item_name.replace(':', '_').replace('/', '_').replace('~', '_')
-        item_hash = hashlib.sha1(item_name).hexdigest()
+        item_hash = hashlib.sha1(item_name.encode('utf-8')).hexdigest()
         dirname = "/".join((item["data_dir"], item_hash))
 
         if os.path.isdir(dirname):
