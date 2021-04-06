@@ -1,0 +1,11 @@
+on: [push, pull_request]
+
+jobs:
+  run5min:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: pip install -U seesaw
+      - run: ./get-wget-lua.sh
+      - run: run-pipeline pipeline.py --concurrent 2 GitHubActions
+        timeout-minutes: 5
