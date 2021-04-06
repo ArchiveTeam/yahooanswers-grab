@@ -6,7 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: sudo apt-get update
-      - run: sudo apt-get install -y git-core libgnutls28-dev lua5.1 liblua5.1-0 liblua5.1-0-dev screen python-dev python-pip bzip2 zlib1g-dev flex autoconf
+      - run: sudo apt-get install -y libgnutls28-dev lua5.1 liblua5.1-0 liblua5.1-0-dev screen zlib1g-dev autoconf
       - run: pip install -U seesaw
       - run: ./get-wget-lua.sh
       - run: run-pipeline pipeline.py --concurrent 2 GitHubActions
