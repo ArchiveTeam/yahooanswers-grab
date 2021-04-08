@@ -59,12 +59,12 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210408.01'
+VERSION = '20210408.02'
 USER_AGENT = 'ArchiveTeam'
-TRACKER_ID = 'yahooanswers'
+TRACKER_ID = 'yahooanswers2'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 20
-PROJECT_ID = TRACKER_ID
+PROJECT_ID = 'yahooanswers'
 
 
 ###########################################################################
@@ -199,7 +199,7 @@ class ZstdDict(object):
         response = requests.get(
             'https://legacy-api.arpa.li/dictionary',
             params={
-                'project': TRACKER_ID
+                'project': PROJECT_ID
             }
         )
         response.raise_for_status()
