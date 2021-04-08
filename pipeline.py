@@ -23,34 +23,35 @@ from seesaw.pipeline import Pipeline
 from seesaw.project import Project
 from seesaw.util import find_executable
 
+from tornado import httpclient
 
-# check the seesaw version
-if StrictVersion(seesaw.__version__) < StrictVersion("0.8.5"):
-    raise Exception("This pipeline needs seesaw version 0.8.5 or higher.")
+import requests
+import zstandard
+
+if StrictVersion(seesaw.__version__) < StrictVersion('0.8.5'):
+    raise Exception('This pipeline needs seesaw version 0.8.5 or higher.')
 
 
 ###########################################################################
 # Find a useful Wget+Lua executable.
 #
-# WGET_LUA will be set to the first path that
+# WGET_AT will be set to the first path that
 # 1. does not crash with --version, and
 # 2. prints the required version string
-WGET_LUA = find_executable(
-    "Wget+Lua",
-    ["GNU Wget 1.14.lua.20130523-9a5c", "GNU Wget 1.14.lua.20160530-955376b"],
+
+WGET_AT = find_executable(
+    'Wget+AT',
     [
-        "./wget-lua",
-        "./wget-lua-warrior",
-        "./wget-lua-local",
-        "../wget-lua",
-        "../../wget-lua",
-        "/home/warrior/wget-lua",
-        "/usr/bin/wget-lua"
+		'GNU Wget 1.20.3-at.20210212.02'
+	],
+    [
+         './wget-at',
+         '/home/warrior/data/wget-at-gnutls'
     ]
 )
 
-if not WGET_LUA:
-    raise Exception("No usable Wget+Lua found.")
+if not WGET_AT:
+    raise Exception('No usable Wget+At found.')
 
 
 ###########################################################################
@@ -58,10 +59,12 @@ if not WGET_LUA:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = "20160831.01"
+VERSION = '20210408.01'
 USER_AGENT = 'ArchiveTeam'
 TRACKER_ID = 'yahooanswers'
-TRACKER_HOST = 'tracker.archiveteam.org'
+TRACKER_HOST = 'legacy-api.arpa.li'
+MULTI_ITEM_SIZE = 20
+PROJECT_ID = TRACKER_ID
 
 
 ###########################################################################
@@ -72,7 +75,7 @@ TRACKER_HOST = 'tracker.archiveteam.org'
 # each item.
 class CheckIP(SimpleTask):
     def __init__(self):
-        SimpleTask.__init__(self, "CheckIP")
+        SimpleTask.__init__(self, 'CheckIP')
         self._counter = 0
 
     def process(self, item):
@@ -105,58 +108,77 @@ class CheckIP(SimpleTask):
 
 class PrepareDirectories(SimpleTask):
     def __init__(self, warc_prefix):
-        SimpleTask.__init__(self, "PrepareDirectories")
+        SimpleTask.__init__(self, 'PrepareDirectories')
         self.warc_prefix = warc_prefix
 
     def process(self, item):
-        item_name = item["item_name"]
-        escaped_item_name = item_name.replace(':', '_').replace('/', '_').replace('~', '_')
-        item_hash = hashlib.sha1(item_name.encode('utf-8')).hexdigest()
-        dirname = "/".join((item["data_dir"], item_hash))
+        item_name = item['item_name']
+        item_name_hash = hashlib.sha1(item_name.encode('utf8')).hexdigest()
+        escaped_item_name = item_name_hash
+        dirname = '/'.join((item['data_dir'], escaped_item_name))
 
         if os.path.isdir(dirname):
             shutil.rmtree(dirname)
 
         os.makedirs(dirname)
 
-        item["item_dir"] = dirname
-        item["warc_file_base"] = "%s-%s-%s" % (self.warc_prefix, item_hash,
-            time.strftime("%Y%m%d-%H%M%S"))
+        item['item_dir'] = dirname
+        item['warc_file_base'] = '-'.join([
+            self.warc_prefix,
+            item_name_hash,
+            time.strftime('%Y%m%d-%H%M%S')
+        ])
 
-        open("%(item_dir)s/%(warc_file_base)s.warc.gz" % item, "w").close()
-        open("%(item_dir)s/%(warc_file_base)s_data.txt" % item, "w").close()
-
+        open('%(item_dir)s/%(warc_file_base)s.warc.zst' % item, 'w').close()
+        open('%(item_dir)s/%(warc_file_base)s_data.txt' % item, 'w').close()
 
 class MoveFiles(SimpleTask):
     def __init__(self):
-        SimpleTask.__init__(self, "MoveFiles")
+        SimpleTask.__init__(self, 'MoveFiles')
 
     def process(self, item):
-        # NEW for 2014! Check if wget was compiled with zlib support
-        if os.path.exists("%(item_dir)s/%(warc_file_base)s.warc" % item):
-            raise Exception('Please compile wget with zlib support!')
+        os.rename('%(item_dir)s/%(warc_file_base)s.warc.zst' % item,
+              '%(data_dir)s/%(warc_file_base)s.%(dict_project)s.%(dict_id)s.warc.zst' % item)
+        os.rename('%(item_dir)s/%(warc_file_base)s_data.txt' % item,
+              '%(data_dir)s/%(warc_file_base)s_data.txt' % item)
 
-        os.rename("%(item_dir)s/%(warc_file_base)s.warc.gz" % item,
-              "%(data_dir)s/%(warc_file_base)s.warc.gz" % item)
+        shutil.rmtree('%(item_dir)s' % item)
 
-        os.rename("%(item_dir)s/%(warc_file_base)s_data.txt" % item,
-              "%(data_dir)s/%(warc_file_base)s_data.txt" % item)
 
-        shutil.rmtree("%(item_dir)s" % item)
+class SetBadUrls(SimpleTask):
+    def __init__(self):
+        SimpleTask.__init__(self, 'SetBadUrls')
+
+    def process(self, item):
+        item['item_name_original'] = item['item_name']
+        items = item['item_name'].split('\0')
+        items_lower = [s.lower() for s in items]
+        with open('%(item_dir)s/%(warc_file_base)s_bad-items.txt' % item, 'r') as f:
+            for aborted_item in f:
+                aborted_item = aborted_item.strip().lower()
+                index = items_lower.index(aborted_item)
+                item.log_output('Item {} is aborted.'.format(aborted_item))
+                items.pop(index)
+                items_lower.pop(index)
+        item['item_name'] = '\0'.join(items)
+
+
+class MaybeSendDoneToTracker(SendDoneToTracker):
+    def enqueue(self, item):
+        if len(item['item_name']) == 0:
+            return self.complete_item(item)
+        return super(MaybeSendDoneToTracker, self).enqueue(item)
 
 
 def get_hash(filename):
     with open(filename, 'rb') as in_file:
         return hashlib.sha1(in_file.read()).hexdigest()
 
-
 CWD = os.getcwd()
 PIPELINE_SHA1 = get_hash(os.path.join(CWD, 'pipeline.py'))
-LUA_SHA1 = get_hash(os.path.join(CWD, 'yahooanswers.lua'))
-
+LUA_SHA1 = get_hash(os.path.join(CWD, PROJECT_ID + '.lua'))
 
 def stats_id_function(item):
-    # NEW for 2014! Some accountability hashes and stats.
     d = {
         'pipeline_hash': PIPELINE_SHA1,
         'lua_hash': LUA_SHA1,
@@ -166,63 +188,109 @@ def stats_id_function(item):
     return d
 
 
+class ZstdDict(object):
+    created = 0
+    data = None
+
+    @classmethod
+    def get_dict(cls):
+        if cls.data is not None and time.time() - cls.created < 1800:
+            return cls.data
+        response = requests.get(
+            'https://legacy-api.arpa.li/dictionary',
+            params={
+                'project': TRACKER_ID
+            }
+        )
+        response.raise_for_status()
+        response = response.json()
+        if cls.data is not None and response['id'] == cls.data['id']:
+            cls.created = time.time()
+            return cls.data
+        print('Downloading latest dictionary.')
+        response_dict = requests.get(response['url'])
+        response_dict.raise_for_status()
+        raw_data = response_dict.content
+        if hashlib.sha256(raw_data).hexdigest() != response['sha256']:
+            raise ValueError('Hash of downloaded dictionary does not match.')
+        if raw_data[:4] == b'\x28\xB5\x2F\xFD':
+            raw_data = zstandard.ZstdDecompressor().decompress(raw_data)
+        cls.data = {
+            'id': response['id'],
+            'dict': raw_data
+        }
+        cls.created = time.time()
+        return cls.data
+
+
 class WgetArgs(object):
     def realize(self, item):
         wget_args = [
-            WGET_LUA,
-            "-U", USER_AGENT,
-            "-nv",
-            "--no-cookies",
-            "--lua-script", "yahooanswers.lua",
-            "-o", ItemInterpolation("%(item_dir)s/wget.log"),
-            "--no-check-certificate",
-            "--output-document", ItemInterpolation("%(item_dir)s/wget.tmp"),
-            "--truncate-output",
-            "-e", "robots=off",
-            "--rotate-dns",
-            "--recursive", "--level=inf",
-            "--no-parent",
-            "--page-requisites",
-            "--timeout", "30",
-            "--tries", "inf",
-            "--domains", "yahoo.com",
-            "--span-hosts",
-            "--waitretry", "30",
-            "--warc-file", ItemInterpolation("%(item_dir)s/%(warc_file_base)s"),
-            "--warc-header", "operator: Archive Team",
-            "--warc-header", "yahooanswers-dld-script-version: " + VERSION,
-            "--warc-header", ItemInterpolation("yahooanswers-item: %(item_name)s"),
+            WGET_AT,
+            '-U', USER_AGENT,
+            '-nv',
+            '--load-cookies', 'cookies.txt',
+            '--content-on-error',
+            '--no-http-keep-alive',
+            '--lua-script', PROJECT_ID + '.lua',
+            '-o', ItemInterpolation('%(item_dir)s/wget.log'),
+            '--no-check-certificate',
+            '--output-document', ItemInterpolation('%(item_dir)s/wget.tmp'),
+            '--truncate-output',
+            '-e', 'robots=off',
+            '--rotate-dns',
+            '--recursive', '--level=inf',
+            '--no-parent',
+            '--page-requisites',
+            '--timeout', '30',
+            '--tries', 'inf',
+            '--domains', 'yahoo.com',
+            '--span-hosts',
+            '--waitretry', '30',
+            '--warc-file', ItemInterpolation('%(item_dir)s/%(warc_file_base)s'),
+            '--warc-header', 'operator: Archive Team',
+            '--warc-header', 'x-wget-at-project-version: ' + VERSION,
+            '--warc-header', 'x-wget-at-project-name: ' + TRACKER_ID,
+            '--warc-dedup-url-agnostic',
+        #    '--warc-compression-use-zstd',
+        #    '--warc-zstd-dict-no-include',
+            '--header', 'Accept-Language: en-US;q=0.9, en;q=0.8'
         ]
-        
-        item_name = item['item_name']
-        assert ':' in item_name
-        item_type, item_value = item_name.split(':', 1)
-        
-        item['item_type'] = item_type
-        item['item_value'] = item_value
-        
-        assert item_type in ('10q')
 
-        languages = ['ar', 'au', 'br', 'ca', 'fr', 'de', 'in', 'id', 'it', 'malaysia', 'mx', 'nz', 'ph', 'qc', 'sg', 'tw', 'es', 'th', 'uk', 'vn', 'espanol']
+        #dict_data = ZstdDict.get_dict()
+        #with open(os.path.join(item['item_dir'], 'zstdict'), 'wb') as f:
+        #    f.write(dict_data['dict'])
+        #item['dict_id'] = dict_data['id']
+        #item['dict_project'] = PROJECT_ID
+        #wget_args.extend([
+        #    '--warc-zstd-dict', ItemInterpolation('%(item_dir)s/zstdict'),
+        #])
 
-        if item_type == '10q':
-            questions = item_value.split(',')
-            for question in questions:
-                wget_args.extend(['--warc-header', 'yahooanswers-question: {question}'.format(**locals())])
-            for lang in languages:
-                wget_args.extend(['--warc-header', 'yahooanswers-questions-language: {lang}'.format(**locals())])
-            wget_args.extend(['https://answers.yahoo.com/question/index?qid={question}'.format(**locals()) for question in questions])
-            wget_args.extend(['https://{lang}.answers.yahoo.com/question/index?qid={question}'.format(**locals()) for lang in languages for question in questions])
-        else:
-            raise Exception('Unknown item')
-        
+        for item_name in item['item_name'].split('\0'):
+            wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
+            wget_args.append('item-name://'+item_name)
+            item_type, item_value = item_name.split(':', 1)
+            if item_type == 'qid':
+                wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
+                wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
+            elif item_type == 'user':
+                wget_args.extend(['--warc-header', 'yahooanswers-user: '+item_value])
+                wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
+            elif item_type == 'dir':
+                wget_args.extend(['--warc-header', 'yahooanswers-category: '+item_value])
+                wget_args.append('https://answers.yahoo.com/dir/index?sid='+item_value)
+            else:
+                raise Exception('Unknown item')
+
+        item['item_name_newline'] = item['item_name'].replace('\0', '\n')
+
         if 'bind_address' in globals():
             wget_args.extend(['--bind-address', globals()['bind_address']])
             print('')
             print('*** Wget will bind address at {0} ***'.format(
                 globals()['bind_address']))
             print('')
-            
+
         return realize(wget_args, item)
 
 ###########################################################################
@@ -231,62 +299,65 @@ class WgetArgs(object):
 # This will be shown in the warrior management panel. The logo should not
 # be too big. The deadline is optional.
 project = Project(
-    title="yahooanswers",
-    project_html="""
-        <img class="project-logo" alt="Project logo" src="http://archiveteam.org/images/a/a3/Yahooanswers_logo.png" height="50px" title=""/>
-        <h2>answers.yahoo.com <span class="links"><a href="https://answers.yahoo.com/">Website</a> &middot; <a href="http://tracker.archiveteam.org/yahooanswers/">Leaderboard</a></span></h2>
-        <p>Archiving questions and answers from Yahoo! Answers.</p>
-    """
+    title='Yahoo! Answers',
+    project_html='''
+        <img class="project-logo" alt="Project logo" src="https://wiki.archiveteam.org/images/a/a3/Yahooanswers_logo.png" height="50px" title=""/>
+        <h2>answer.yahoo.com <span class="links"><a href="https://answer.yahoo.com/">Website</a> &middot; <a href="http://tracker.archiveteam.org/''' + TRACKER_ID + '''/">Leaderboard</a></span></h2>
+        <p>Archiving everything from Yahoo! Answers.</p>
+    '''
 )
 
 pipeline = Pipeline(
     CheckIP(),
-    GetItemFromTracker("http://%s/%s" % (TRACKER_HOST, TRACKER_ID), downloader,
-        VERSION),
-    PrepareDirectories(warc_prefix="yahooanswers"),
+    GetItemFromTracker('http://{}/{}/multi={}/'
+        .format(TRACKER_HOST, TRACKER_ID, MULTI_ITEM_SIZE),
+        downloader, VERSION),
+    PrepareDirectories(warc_prefix=PROJECT_ID),
     WgetDownload(
         WgetArgs(),
         max_tries=2,
         accept_on_exit_code=[0, 4, 8],
         env={
-            "item_dir": ItemValue("item_dir"),
-            "item_value": ItemValue("item_value"),
-            "item_type": ItemValue("item_type"),
-            "warc_file_base": ItemValue("warc_file_base"),
+            'item_dir': ItemValue('item_dir'),
+            'item_names': ItemValue('item_name_newline'),
+            'warc_file_base': ItemValue('warc_file_base'),
         }
     ),
+    SetBadUrls(),
     PrepareStatsForTracker(
-        defaults={"downloader": downloader, "version": VERSION},
+        defaults={'downloader': downloader, 'version': VERSION},
         file_groups={
-            "data": [
-                ItemInterpolation("%(item_dir)s/%(warc_file_base)s.warc.gz"),
-                ItemInterpolation("%(item_dir)s/%(warc_file_base)s_data.txt")
+            'data': [
+                ItemInterpolation('%(item_dir)s/%(warc_file_base)s.warc.zst')
             ]
         },
         id_function=stats_id_function,
     ),
-    MoveFiles(),
-    LimitConcurrent(NumberConfigValue(min=1, max=4, default="1",
-        name="shared:rsync_threads", title="Rsync threads",
-        description="The maximum number of concurrent uploads."),
+    #MoveFiles(),
+    LimitConcurrent(NumberConfigValue(min=1, max=20, default='20',
+        name='shared:rsync_threads', title='Rsync threads',
+        description='The maximum number of concurrent uploads.'),
         UploadWithTracker(
-            "http://%s/%s" % (TRACKER_HOST, TRACKER_ID),
+            'http://%s/%s' % (TRACKER_HOST, TRACKER_ID),
             downloader=downloader,
             version=VERSION,
             files=[
-                ItemInterpolation("%(data_dir)s/%(warc_file_base)s.warc.gz"),
-                ItemInterpolation("%(data_dir)s/%(warc_file_base)s_data.txt")
+                ItemInterpolation('%(data_dir)s/%(warc_file_base)s.%(dict_project)s.%(dict_id)s.warc.zst'),
+                ItemInterpolation('%(data_dir)s/%(warc_file_base)s_data.txt')
             ],
-            rsync_target_source_path=ItemInterpolation("%(data_dir)s/"),
+            rsync_target_source_path=ItemInterpolation('%(data_dir)s/'),
             rsync_extra_args=[
-                "--recursive",
-                "--partial",
-                "--partial-dir", ".rsync-tmp",
+                '--recursive',
+                '--partial',
+                '--partial-dir', '.rsync-tmp',
+                '--min-size', '1',
+                '--no-compress',
+                '--compress-level', '0'
             ]
-            ),
+        ),
     ),
-    SendDoneToTracker(
-        tracker_url="http://%s/%s" % (TRACKER_HOST, TRACKER_ID),
-        stats=ItemValue("stats")
+    MaybeSendDoneToTracker(
+        tracker_url='http://%s/%s' % (TRACKER_HOST, TRACKER_ID),
+        stats=ItemValue('stats')
     )
 )
