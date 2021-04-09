@@ -20,6 +20,8 @@ local exit_url = false
 
 local outlinks = {}
 local discovered = {}
+local discovered_all = {}
+local discovered_count = 0
 
 local bad_items = {}
 
@@ -59,17 +61,67 @@ read_file = function(file)
 end
 
 submit_discovered = function()
-  return nil
+  io.stdout:write("Submitting " .. tostring(discovered_count) .. " items.\n")
+  io.stdout:flush()
+  for key, table in pairs({
+    ["yahooanswers2-avt8l5qey8tzzf3"]=discovered,
+    ["urls-jzgws2r0z10phee"]=outlinks
+  }) do
+    local items = nil
+    for item, _ in pairs(table) do
+      if not items then
+        items = item
+      else
+        items = items .. "\0" .. item
+      end
+    end
+    if items then
+      local tries = 0
+      while tries < 10 do
+        local body, code, headers, status = http.request(
+          "http://blackbird-amqp.meo.ws:23038/" .. key .. "/",
+          items
+        )
+        if code == 200 or code == 409 then
+          break
+        end
+        io.stdout:write("Could not queue items.\n")
+        io.stdout:flush()
+        os.execute("sleep " .. math.floor(math.pow(2, tries)))
+        tries = tries + 1
+      end
+      if tries == 10 then
+        abort_item()
+      end
+    end
+  end
+  discovered = {}
+  outlinks = {}
+  discovered_count = 0
 end
 
-discover_item = function(type_, value)
-  item = type_ .. ":" .. value
-  if item == item_name or discovered[item] then
+discover_item = function(type_, value, target)
+  local item = type_ .. ":" .. value
+  if not target then
+    target = "yahooanswers"
+  end
+  if target == "yahooanswers" then
+    target = discovered
+  elseif target == "urls" then
+    target = outlinks
+  else
+    io.stdout:write("Bad items target.\n")
+    io.stdout:flush()
+    abort_item()
+  end
+  if item == item_name or discovered_all[item] then
     return true
   end
   print('discovered item', item)
-  discovered[item] = true
-  if #discovered == 100 then
+  target[item] = true
+  discovered_all[item] = true
+  discovered_count = discovered_count + 1
+  if discovered_count == 100 then
     return submit_discovered()
   end
   return true
@@ -366,15 +418,15 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     html = string.gsub(html, "&quot;", '"')
     html = string.gsub(html, "&#039;", "'")
-    if string.match(html, '"[^"]*captcha[^"]*"\s*:\s*true') then
+    if string.match(html, '"[^"]*captcha[^"]*"%s*:%s*true') then
       io.stdout:write("Something is up with recaptcha here!.\n")
       io.stdout:flush()
       abort_item()
     end
-    for s in string.gmatch(html, '"qid"\s*:\s*"([0-9a-zA-Z_%-]+)"') do
+    for s in string.gmatch(html, '"qid"%s*:%s*"([0-9a-zA-Z_%-]+)"') do
       discover_item("qid", s)
     end
-    for s in string.gmatch(html, '"kid"\s*:\s*"([0-9a-zA-Z_%-]+)"') do
+    for s in string.gmatch(html, '"kid"%s*:%s*"([0-9a-zA-Z_%-]+)"') do
       discover_item("kid", s)
     end
     for newurl in string.gmatch(html, '([^"]+)') do
@@ -510,6 +562,7 @@ wget.callbacks.finish = function(start_time, end_time, wall_time, numurls, total
     file:write(url .. "\n")
   end
   file:close()
+  submit_discovered()
 end
 
 wget.callbacks.before_exit = function(exit_status, exit_status_string)
