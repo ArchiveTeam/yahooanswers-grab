@@ -67,7 +67,7 @@ discover_item = function(type_, value)
   if item == item_name or discovered[item] then
     return true
   end
-  print('discovered', item)
+  print('discovered item', item)
   discovered[item] = true
   if #discovered == 100 then
     return submit_discovered()
@@ -101,13 +101,13 @@ allowed = function(url, parenturl)
     return true
   end]]
 
-  local match = string.match(url, "[%?&]qid=([0-9a-zA-Z]+)")
+  local match = string.match(url, "[%?&]qid=([0-9a-zA-Z_%-]+)")
   if match then
     discover_item("qid", match)
   end
-  match = string.match(url, "/activity/questions%?show=([0-9a-zA-Z]+)")
+  match = string.match(url, "/activity/questions%?show=([0-9a-zA-Z_%-]+)")
   if match then
-    discover_item("user", match)
+    discover_item("kid", match)
   end
   match = string.match(url, "/dir/index%?sid=([0-9]+)")
   if match then
@@ -222,7 +222,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     local base_url = string.match(url, "^(https?://[^/]+)")
     local identification = base_url .. data
     if not addedtolist[identification] then
-print(data)
+      print("PUT", base_url, data)
       table.insert(urls, {
         url=base_url .. "/_reservice_/",
         method="PUT",
@@ -299,7 +299,10 @@ print(data)
           state="CREATED"
         }
       })
-      question_answers(11, 20, item_value, lang)
+      if data["question"]["answerCount"] > 10 then
+        question_answers(1, 10, item_value, lang)
+        question_answers(11, 20, item_value, lang)
+      end
     end
     if string.find(url, "/_reservice_/") then
       local data = JSON:decode(html)
@@ -349,19 +352,35 @@ print(data)
         local orig_count = data["reservice"]["previous_action"]["payload"]["count"]
         local new_start = data["payload"]["start"] + data["payload"]["count"]
         local lang = data["reservice"]["previous_action"]["payload"]["lang"]
-        if data["payload"]["count"] == orig_count then
-          question_answers(new_start, orig_count, data["payload"]["qid"], lang)
-        elseif new_start - 1 ~= data["payload"]["answerCount"] then
-          io.stdout:write("/_reservice_/ did not return all answers.\n")
-          io.stdout:flush()
-          abort_item()
+        if data["reservice"]["previous_action"]["payload"]["qid"] == item_value
+          and orig_count ~= 10 then
+          if data["payload"]["count"] == orig_count then
+            question_answers(new_start, orig_count, data["payload"]["qid"], lang)
+          elseif new_start - 1 ~= data["payload"]["answerCount"] then
+            io.stdout:write("/_reservice_/ did not return all answers.\n")
+            io.stdout:flush()
+            abort_item()
+          end
         end
       end
     end
-    for newurl in string.gmatch(string.gsub(html, "&quot;", '"'), '([^"]+)') do
+    html = string.gsub(html, "&quot;", '"')
+    html = string.gsub(html, "&#039;", "'")
+    if string.match(html, '"[^"]*captcha[^"]*"\s*:\s*true') then
+      io.stdout:write("Something is up with recaptcha here!.\n")
+      io.stdout:flush()
+      abort_item()
+    end
+    for s in string.gmatch(html, '"qid"\s*:\s*"([0-9a-zA-Z_%-]+)"') do
+      discover_item("qid", s)
+    end
+    for s in string.gmatch(html, '"kid"\s*:\s*"([0-9a-zA-Z_%-]+)"') do
+      discover_item("kid", s)
+    end
+    for newurl in string.gmatch(html, '([^"]+)') do
       checknewurl(newurl)
     end
-    for newurl in string.gmatch(string.gsub(html, "&#039;", "'"), "([^']+)") do
+    for newurl in string.gmatch(html, "([^']+)") do
       checknewurl(newurl)
     end
     for newurl in string.gmatch(html, ">%s*([^<%s]+)") do
@@ -386,7 +405,7 @@ set_new_item = function(url)
   local type_ = "qid"
   if not match then
     match = string.match(url, "^https?://answers%.yahoo%.com/activity/questions%?show=([0-9a-zA-Z]+)$")
-    type_ = "user"
+    type_ = "kid"
   end
   if not match then
     match = string.match(url, "^https?://answers%.yahoo%.com/dir/index?sid=([0-9]+)$")
@@ -406,14 +425,6 @@ end
 
 wget.callbacks.write_to_warc = function(url, http_stat)
   set_new_item(url["url"])
-  if http_stat["statcode"] == 410
-    and (
-      string.match(url["url"], "^https?://[^%.]+%.webs%.com/$")
-      or string.match(url["url"], "^https?://[^%.]+%.webs%.com/robots%.txt$")
-      or string.match(url["url"], "^https?://[^%.]+%.webs%.com/sitemap%.xml$")
-    ) then
-    abort_item()
-  end
   if exitgrab then
     io.stdout:write("Not writing WARC record.\n")
     io.stdout:flush()
@@ -436,6 +447,13 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   url_count = url_count + 1
   io.stdout:write(url_count .. "=" .. status_code .. " " .. url["url"] .. "  \n")
   io.stdout:flush()
+
+  if string.match(url["url"], "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
+    and status_code ~= 200 and status_code ~= 404 then
+    io.stdout:write("Got an unexpected status code.\n")
+    io.stdout:flush()
+    abort_item()
+  end
 
   if exitgrab then
     return wget.actions.EXIT

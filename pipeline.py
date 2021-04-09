@@ -273,8 +273,8 @@ class WgetArgs(object):
             if item_type == 'qid':
                 wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
-            elif item_type == 'user':
-                wget_args.extend(['--warc-header', 'yahooanswers-user: '+item_value])
+            elif item_type == 'kid':
+                wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
             elif item_type == 'dir':
                 wget_args.extend(['--warc-header', 'yahooanswers-category: '+item_value])
