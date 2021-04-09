@@ -252,26 +252,28 @@ class WgetArgs(object):
             '--warc-header', 'x-wget-at-project-version: ' + VERSION,
             '--warc-header', 'x-wget-at-project-name: ' + TRACKER_ID,
             '--warc-dedup-url-agnostic',
-        #    '--warc-compression-use-zstd',
-        #    '--warc-zstd-dict-no-include',
+            '--warc-compression-use-zstd',
+            '--warc-zstd-dict-no-include',
             '--header', 'Accept-Language: en-US;q=0.9, en;q=0.8'
         ]
 
-        #dict_data = ZstdDict.get_dict()
-        #with open(os.path.join(item['item_dir'], 'zstdict'), 'wb') as f:
-        #    f.write(dict_data['dict'])
-        #item['dict_id'] = dict_data['id']
-        #item['dict_project'] = PROJECT_ID
-        #wget_args.extend([
-        #    '--warc-zstd-dict', ItemInterpolation('%(item_dir)s/zstdict'),
-        #])
+        dict_data = ZstdDict.get_dict()
+        with open(os.path.join(item['item_dir'], 'zstdict'), 'wb') as f:
+            f.write(dict_data['dict'])
+        item['dict_id'] = dict_data['id']
+        item['dict_project'] = PROJECT_ID
+        wget_args.extend([
+            '--warc-zstd-dict', ItemInterpolation('%(item_dir)s/zstdict'),
+        ])
 
         items_list_new = []
 
         for item_name in item['item_name'].split('\0'):
+            item_type, item_value = item_name.split(':', 1)
+            if item_type in ('kid', 'dir'):
+                continue
             wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
             wget_args.append('item-name://'+item_name)
-            item_type, item_value = item_name.split(':', 1)
             if item_type == 'qid':
                 items_list_new.append(item_name)
                 wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
