@@ -61,10 +61,10 @@ if not WGET_AT:
 # It will be added to the WARC files and reported to the tracker.
 VERSION = '20210408.02'
 USER_AGENT = 'ArchiveTeam'
-TRACKER_ID = 'yahooanswers2'
+PROJECT_ID = 'yahooanswers'
+TRACKER_ID = PROJECT_ID + '2'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 20
-PROJECT_ID = 'yahooanswers'
 
 
 ###########################################################################
@@ -266,23 +266,28 @@ class WgetArgs(object):
         #    '--warc-zstd-dict', ItemInterpolation('%(item_dir)s/zstdict'),
         #])
 
+        items_list_new = []
+
         for item_name in item['item_name'].split('\0'):
             wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
             wget_args.append('item-name://'+item_name)
             item_type, item_value = item_name.split(':', 1)
             if item_type == 'qid':
+                items_list_new.append(item_name)
                 wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
             elif item_type == 'kid':
-                wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
-                wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
+                pass
+                #wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
+                #wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
             elif item_type == 'dir':
-                wget_args.extend(['--warc-header', 'yahooanswers-category: '+item_value])
-                wget_args.append('https://answers.yahoo.com/dir/index?sid='+item_value)
+                pass
+                #wget_args.extend(['--warc-header', 'yahooanswers-category: '+item_value])
+                #wget_args.append('https://answers.yahoo.com/dir/index?sid='+item_value)
             else:
                 raise Exception('Unknown item')
 
-        item['item_name_newline'] = item['item_name'].replace('\0', '\n')
+        item['item_name'] = '\0'.join(items_list_new)
 
         if 'bind_address' in globals():
             wget_args.extend(['--bind-address', globals()['bind_address']])
@@ -319,7 +324,6 @@ pipeline = Pipeline(
         accept_on_exit_code=[0, 4, 8],
         env={
             'item_dir': ItemValue('item_dir'),
-            'item_names': ItemValue('item_name_newline'),
             'warc_file_base': ItemValue('warc_file_base'),
         }
     ),
