@@ -105,13 +105,22 @@ submit_discovered = function()
 end
 
 discover_item = function(type_, value, target)
-  local item = type_ .. ":" .. value
+  local item = nil
   if not target then
     target = "yahooanswers"
   end
   if target == "yahooanswers" then
+    item = type_ .. ":" .. value
     target = discovered
   elseif target == "urls" then
+    item = ""
+    for c in string.gmatch(value, "(.)") do
+      local b = string.byte(c)
+      if b < 32 or b > 126 then
+        c = string.format("%%%02X", b)
+      end
+      item = item .. c
+    end
     target = outlinks
   else
     io.stdout:write("Bad items target.\n")
@@ -445,6 +454,11 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     for newurl in string.gmatch(html, '"attached[iI]mage[uU]rl"%s*:%s*"([^"]+)"') do
       allowed_urls[newurl] = true
       checknewurl(newurl)
+    end
+    for s in string.gmatch(html, '"text"%s*:%s*"([^"]+)"') do
+      for newurl in string.gmatch(s, "(https?://[^%s\\%)]+)") do
+        discover_item(nil, newurl, "urls")
+      end
     end
     for newurl in string.gmatch(html, '([^"]+)') do
       checknewurl(newurl)
