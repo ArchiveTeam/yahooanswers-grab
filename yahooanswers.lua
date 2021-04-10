@@ -145,6 +145,11 @@ allowed = function(url, parenturl)
     return true
   end
 
+  if string.match(url, "^https?://[^/]*answers%.yahoo%.com/rss/question%?qid=")
+    or string.match(url, "^https?://[^/]*answers%.yahoo%.com/amp/qna/") then
+    return false
+  end
+
   local tested = {}
   for s in string.gmatch(url, "([^/]+)") do
     if not tested[s] then
@@ -280,6 +285,19 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
   end
 
+  local function jg(json, location) -- json_get
+    for _, s in pairs(location) do
+      if not json or json[s] == nil then
+        io.stdout:write("Could not find key " .. s .. " in " .. JSON:encode(json) .. ".\n")
+        io.stdout:flush()
+        abort_item()
+        return false
+      end
+      json = json[s]
+    end
+    return json
+  end
+
   local function reservice(data)
     data = JSON:encode(data)
     local base_url = string.match(url, "^(https?://[^/]+)")
@@ -347,12 +365,12 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
-      if data["question"]["qid"] ~= item_value then
+      if jg(data, {"question", "qid"}) ~= item_value then
         io.stdout:write("Wrong qid found on webpage.\n")
         io.stdout:flush()
         abort_item()
       end
-      local lang = data["question"]["lang"]
+      local lang = jg(data, {"question", "lang"})
       reservice({
         type="CALL_RESERVICE",
         payload={
@@ -365,33 +383,34 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           state="CREATED"
         }
       })
-      if data["question"]["answerCount"] > 10 then
-        for _, sort in pairs({"RELEVANCE", "RATING", "OLDEST", "NEWEST"}) do
+      if jg(data, {"question", "answerCount"}) > 10 then
+        --[[for _, sort in pairs({"RELEVANCE", "RATING", "OLDEST", "NEWEST"}) do
           question_answers(1, 20, item_value, lang, sort)
-        end
-        if not data["questionAnswersList"][item_value] then
+        end]]
+        if not jg(data, {"questionAnswersList", item_value}) then
           io.stdout:write("Incomplete JSON data.\n")
           io.stdout:flush()
           abort_item()
         end
-        sort_type = data["questionAnswersList"][item_value]["sortType"]
+        sort_type = jg(data, {"questionAnswersList", item_value, "sortType"})
+        question_answers(1, 10, item_value, lang, sort_type)
         question_answers(11, 20, item_value, lang, sort_type)
       end
     end
     if string.find(url, "/_reservice_/") then
       local data = JSON:decode(html)
-      if data["error"] then
+      if jg(data, {"error"}) then
         io.stdout:write("Bad /_reservice_/ response.\n")
         io.stdout:flush()
         abort_item()
       end
-      if data["type"] == "FETCH_EXTRA_QUESTION_LIST_END" then
-        local lang = data["reservice"]["previous_action"]["payload"]["lang"]
-        for _, d in pairs(data["payload"]) do
+      if jg(data, {"type"}) == "FETCH_EXTRA_QUESTION_LIST_END" then
+        local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
+        for _, d in pairs(jg(data, {"payload"})) do
           reservice({
             type="CALL_RESERVICE",
             payload={
-              qid=d["qid"]
+              qid=jg(d, {"qid"})
             },
             reservice={
               name="FETCH_QUESTION_END",
@@ -399,7 +418,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
               state="CREATED"
             },
             kvPayload={
-              key=d["qid"],
+              key=jg(d, {"qid"}),
               kvActionPrefix="KV/question/"
             }
           })
@@ -408,7 +427,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             payload={
               count=10,
               lang=lang,
-              qid=d["qid"],
+              qid=jg(d, {"qid"}),
               sortType=sort_type
             },
             reservice={
@@ -417,20 +436,21 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
               state="CREATED"
             },
             kvPayload={
-              key=d["qid"],
+              key=jg(d, {"qid"}),
               kvActionPrefix="KV/questionAnswers/"
             }
           })
         end
-      elseif data["type"] == "FETCH_QUESTION_ANSWERS_END" then
-        local orig_count = data["reservice"]["previous_action"]["payload"]["count"]
-        local new_start = data["payload"]["start"] + data["payload"]["count"]
-        local lang = data["reservice"]["previous_action"]["payload"]["lang"]
-        local sort = data["reservice"]["previous_action"]["payload"]["sortType"]
-        if data["reservice"]["previous_action"]["payload"]["qid"] == item_value then
-          if data["payload"]["count"] == orig_count then
-            question_answers(new_start, orig_count, data["payload"]["qid"], lang, sort)
-          elseif new_start - 1 ~= data["payload"]["answerCount"] then
+      elseif jg(data, {"type"}) == "FETCH_QUESTION_ANSWERS_END" then
+        local orig_count = jg(data, {"reservice", "previous_action", "payload", "count"})
+        if jg(data, {"reservice", "previous_action", "payload", "qid"}) == item_value
+          and orig_count ~= 10 then
+          local new_start = jg(data, {"payload", "start"}) + jg(data, {"payload", "count"})
+          local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
+          local sort = jg(data, {"reservice", "previous_action", "payload", "sortType"})
+          if jg(data, {"payload", "count"}) == orig_count then
+            question_answers(new_start, orig_count, jg(data, {"payload", "qid"}), lang, sort)
+          elseif new_start - 1 ~= jg(data, {"payload", "answerCount"}) then
             io.stdout:write("/_reservice_/ did not return all answers.\n")
             io.stdout:flush()
             abort_item()
@@ -532,13 +552,6 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   io.stdout:write(url_count .. "=" .. status_code .. " " .. url["url"] .. "  \n")
   io.stdout:flush()
 
-  if string.match(url["url"], "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
-    and status_code ~= 200 and status_code ~= 404 then
-    io.stdout:write("Got an unexpected status code.\n")
-    io.stdout:flush()
-    abort_item()
-  end
-
   if exitgrab then
     return wget.actions.EXIT
   end
@@ -557,14 +570,21 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   end
 
   if status_code == 0
-    or (status_code > 400 and status_code ~= 404) then
+    or (status_code > 400 and status_code ~= 404)
+    or (
+      string.match(url["url"], "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
+      and status_code ~= 200 and status_code ~= 404
+    ) then
     io.stdout:write("Server returned " .. http_stat.statcode .. " (" .. err .. "). Sleeping.\n")
     io.stdout:flush()
-    local maxtries = 1
+    local maxtries = 4
     if tries >= maxtries then
       io.stdout:write("I give up...\n")
       io.stdout:flush()
       tries = 0
+      if string.match(url["url"], "^https?://s%.yimg%.com/") and status_code == 403 then
+        return wget.actions.EXIT
+      end
       if not allowed(url["url"], nil) then
         return wget.actions.EXIT
       end
