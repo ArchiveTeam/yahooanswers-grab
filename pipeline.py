@@ -309,7 +309,7 @@ project = Project(
     title='Yahoo! Answers',
     project_html='''
         <img class="project-logo" alt="Project logo" src="https://wiki.archiveteam.org/images/a/a3/Yahooanswers_logo.png" height="50px" title=""/>
-        <h2>answer.yahoo.com <span class="links"><a href="https://answer.yahoo.com/">Website</a> &middot; <a href="http://tracker.archiveteam.org/''' + TRACKER_ID + '''/">Leaderboard</a></span></h2>
+        <h2>answers.yahoo.com <span class="links"><a href="https://answers.yahoo.com/">Website</a> &middot; <a href="http://tracker.archiveteam.org/''' + TRACKER_ID + '''/">Leaderboard</a></span></h2>
         <p>Archiving everything from Yahoo! Answers.</p>
     '''
 )
