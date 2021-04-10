@@ -59,7 +59,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210410.04'
+VERSION = '20210410.05'
 USER_AGENT = 'ArchiveTeam'
 PROJECT_ID = 'yahooanswers'
 TRACKER_ID = PROJECT_ID + '2'
@@ -270,8 +270,8 @@ class WgetArgs(object):
 
         for item_name in item['item_name'].split('\0'):
             item_type, item_value = item_name.split(':', 1)
-            if item_type in ('kid', 'dir'):
-                continue
+#            if item_type in ('kid', 'dir'):
+#                continue
             items_list_new.append(item_name)
             wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
             wget_args.append('item-name://'+item_name)
