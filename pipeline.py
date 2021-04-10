@@ -272,10 +272,10 @@ class WgetArgs(object):
             item_type, item_value = item_name.split(':', 1)
             if item_type in ('kid', 'dir'):
                 continue
+            items_list_new.append(item_name)
             wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
             wget_args.append('item-name://'+item_name)
             if item_type == 'qid':
-                items_list_new.append(item_name)
                 wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
             elif item_type == 'kid':

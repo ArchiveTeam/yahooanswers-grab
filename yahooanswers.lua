@@ -23,7 +23,11 @@ local discovered = {}
 local discovered_all = {}
 local discovered_count = 0
 
+local allowed_urls = {}
+
 local bad_items = {}
+
+local sort_type = nil
 
 if not urlparse or not http then
   io.stdout:write("socket not corrently installed.\n")
@@ -128,6 +132,10 @@ discover_item = function(type_, value, target)
 end
 
 allowed = function(url, parenturl)
+  if allowed_urls[url] then
+    return true
+  end
+
   local tested = {}
   for s in string.gmatch(url, "([^/]+)") do
     if not tested[s] then
@@ -146,12 +154,6 @@ allowed = function(url, parenturl)
       end
     end
   end
-
-  --[[if string.match(url, "^https?://[^/]*yimg%.com/")
-    or string.match(url, "^https?://geo%.yahoo%.com/.")
-    or string.match(url, "^https?://udc%.yahoo%.com/.") then
-    return true
-  end]]
 
   local match = string.match(url, "[%?&]qid=([0-9a-zA-Z_%-]+)")
   if match then
@@ -287,7 +289,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
   end
 
-  local function question_answers(start, num, qid, lang)
+  local function question_answers(start, num, qid, lang, sort)
     if qid == item_value then
       reservice({
         type="CALL_RESERVICE",
@@ -296,7 +298,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           count=num,
           start=start,
           lang=lang,
-          sortType="RELEVANCE"
+          sortType=sort
         },
         reservice={
           name="FETCH_QUESTION_ANSWERS_END",
@@ -313,8 +315,11 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
 
   local a, b = string.match(url, "^(https?://s%.yimg%.com/.+/[0-9a-f]+)_[A-Z](%.[0-9a-zA-Z]+)$")
   if a and b then
-    check(a .. "_A" .. b)
-    check(a .. "_C" .. b)
+    for _, c in pairs({"A", "C"}) do
+      local newurl = a .. "_" .. c .. b
+      allowed_urls[newurl] = true
+      check(newurl)
+    end
   end
 
   if item_type == "qid" then
@@ -352,8 +357,16 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         }
       })
       if data["question"]["answerCount"] > 10 then
-        question_answers(1, 10, item_value, lang)
-        question_answers(11, 20, item_value, lang)
+        for _, sort in pairs({"RELEVANCE", "RATING", "OLDEST", "NEWEST"}) do
+          question_answers(1, 20, item_value, lang, sort)
+        end
+        if not data["questionAnswersList"][item_value] then
+          io.stdout:write("Incomplete JSON data.\n")
+          io.stdout:flush()
+          abort_item()
+        end
+        sort_type = data["questionAnswersList"][item_value]["sortType"]
+        question_answers(11, 20, item_value, lang, sort_type)
       end
     end
     if string.find(url, "/_reservice_/") then
@@ -387,7 +400,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
               count=10,
               lang=lang,
               qid=d["qid"],
-              sortType="RELEVANCE"
+              sortType=sort_type
             },
             reservice={
               name="FETCH_QUESTION_ANSWERS_END",
@@ -404,10 +417,10 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         local orig_count = data["reservice"]["previous_action"]["payload"]["count"]
         local new_start = data["payload"]["start"] + data["payload"]["count"]
         local lang = data["reservice"]["previous_action"]["payload"]["lang"]
-        if data["reservice"]["previous_action"]["payload"]["qid"] == item_value
-          and orig_count ~= 10 then
+        local sort = data["reservice"]["previous_action"]["payload"]["sortType"]
+        if data["reservice"]["previous_action"]["payload"]["qid"] == item_value then
           if data["payload"]["count"] == orig_count then
-            question_answers(new_start, orig_count, data["payload"]["qid"], lang)
+            question_answers(new_start, orig_count, data["payload"]["qid"], lang, sort)
           elseif new_start - 1 ~= data["payload"]["answerCount"] then
             io.stdout:write("/_reservice_/ did not return all answers.\n")
             io.stdout:flush()
@@ -428,6 +441,10 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     for s in string.gmatch(html, '"kid"%s*:%s*"([0-9a-zA-Z_%-]+)"') do
       discover_item("kid", s)
+    end
+    for newurl in string.gmatch(html, '"attached[iI]mage[uU]rl"%s*:%s*"([^"]+)"') do
+      allowed_urls[newurl] = true
+      checknewurl(newurl)
     end
     for newurl in string.gmatch(html, '([^"]+)') do
       checknewurl(newurl)
@@ -466,6 +483,7 @@ set_new_item = function(url)
   if match and not ids[match] then
     abortgrab = false
     exitgrab = false
+    sort_type = nil
     ids[match] = true
     item_value = match
     item_type = type_
