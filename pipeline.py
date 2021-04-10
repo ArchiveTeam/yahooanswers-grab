@@ -46,7 +46,7 @@ WGET_AT = find_executable(
 	],
     [
          './wget-at',
-         '/home/warrior/data/wget-at-gnutls'
+         '/home/warrior/data/wget-at'
     ]
 )
 
