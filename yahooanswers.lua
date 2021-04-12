@@ -406,7 +406,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       end
       if jg(data, {"type"}) == "FETCH_EXTRA_QUESTION_LIST_END" then
         local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
-        for _, d in pairs(jg(data, {"payload"})) do
+        --[[for _, d in pairs(jg(data, {"payload"})) do
           reservice({
             type="CALL_RESERVICE",
             payload={
@@ -440,7 +440,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
               kvActionPrefix="KV/questionAnswers/"
             }
           })
-        end
+        end]]
       elseif jg(data, {"type"}) == "FETCH_QUESTION_ANSWERS_END" then
         local orig_count = jg(data, {"reservice", "previous_action", "payload", "count"})
         if jg(data, {"reservice", "previous_action", "payload", "qid"}) == item_value
