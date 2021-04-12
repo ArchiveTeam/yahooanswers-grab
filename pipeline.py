@@ -59,7 +59,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210413.01'
+VERSION = '20210413.02'
 USER_AGENT = 'ArchiveTeam'
 PROJECT_ID = 'yahooanswers'
 TRACKER_ID = PROJECT_ID + '2'

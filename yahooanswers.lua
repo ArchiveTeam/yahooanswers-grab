@@ -28,6 +28,8 @@ local allowed_urls = {}
 local bad_items = {}
 
 local sort_type = nil
+local intl = nil
+local languages = {}
 
 if not urlparse or not http then
   io.stdout:write("socket not corrently installed.\n")
@@ -39,6 +41,10 @@ local ids = {}
 
 for ignore in io.open("ignore-list", "r"):lines() do
   downloaded[ignore] = true
+end
+
+for lang in io.open("languages", "r"):lines() do
+  languages[lang] = true
 end
 
 abort_item = function(abort)
@@ -159,6 +165,13 @@ allowed = function(url, parenturl)
       return false
     end
     tested[s] = tested[s] + 1
+  end
+
+  if intl then
+    local match = string.match(url, "^https?://([^%.]+)%.answers%.yahoo%.com/")
+    if match and match ~= intl then
+      return false
+    end
   end
 
   for _, pattern in pairs({"([0-9a-zA-Z]+)", "([0-9]+)"}) do
@@ -349,15 +362,6 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
   end
 
-  if item_type == "qid" then
-    for _, lang in pairs({
-      "ar", "au", "br", "ca", "fr", "de", "in", "id", "it", "malaysia", "mx",
-      "nz", "ph", "qc", "sg", "tw", "es", "th", "uk", "vn", "espanol"
-    }) do
-      check("https://" .. lang .. ".answers.yahoo.com/question/index?qid=" .. item_value)
-    end
-  end
-
   if (allowed(url, nil) and status_code == 200)
     or string.find(url, "/_reservice_/") then
     html = read_file(file)
@@ -369,6 +373,10 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         io.stdout:write("Wrong qid found on webpage.\n")
         io.stdout:flush()
         abort_item()
+      end
+      local temp_intl = jg(data, {"question", "intl"})
+      if temp_intl == "us" or languages[temp_intl] then
+        intl = temp_intl
       end
       local lang = jg(data, {"question", "lang"})
       reservice({
@@ -500,6 +508,12 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
   end
 
+  if item_type == "qid" then
+    for lang, _ in pairs(languages) do
+      check("https://" .. lang .. ".answers.yahoo.com/question/index?qid=" .. item_value)
+    end
+  end
+
   return urls
 end
 
@@ -518,6 +532,7 @@ set_new_item = function(url)
     abortgrab = false
     exitgrab = false
     sort_type = nil
+    intl = nil
     ids[match] = true
     item_value = match
     item_type = type_
