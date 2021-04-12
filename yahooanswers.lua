@@ -529,7 +529,9 @@ end
 
 wget.callbacks.write_to_warc = function(url, http_stat)
   set_new_item(url["url"])
-  if exitgrab then
+  if exitgrab
+    or http_stat["statcode"] == 500
+    or http_stat["statcode"] == 429 then
     io.stdout:write("Not writing WARC record.\n")
     io.stdout:flush()
     return false
