@@ -388,6 +388,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
+print(string.gsub(data, "&quot;", '"'))
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
       if jg(data, {"question", "qid"}) ~= item_value then
         io.stdout:write("Wrong qid found on webpage.\n")
