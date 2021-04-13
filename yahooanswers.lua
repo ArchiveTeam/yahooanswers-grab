@@ -547,7 +547,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
-      and discovered_count_qid < 8 then
+      and discovered_count_qid < 10 then
       io.stdout:write("Did not discover enough qid items.\n")
       io.stdout:flush()
       abort_item()
