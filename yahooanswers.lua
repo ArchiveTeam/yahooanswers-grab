@@ -365,6 +365,26 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
   if (allowed(url, nil) and status_code == 200)
     or string.find(url, "/_reservice_/") then
     html = read_file(file)
+    if string.find(html, "emptyStream")
+      or string.find(html, "ErrorState")
+      or (
+        string.match(url, "[%?&]qid=")
+        and (
+          not string.find(html, 'data%-icon="bookmark"')
+          or not string.find(html, 'data%-icon="flag"')
+          or not string.find(html, "QuestionActionBar")
+          or not string.find(html, "M10%.414 18%.956c5%.992%.574 10%.588%-3%.19 10%.588%-7%.537 0%-4%.09%-4%.039%-7%.417%-9%.004%-7%.417%-4%.963 0%-9 3%.327%-9")
+          or not string.find(html, "M6%.997 3l%.006 3h9%.995V3h%-10zm5 14%.165l5 2%.953V8h%-10v12%.117l5%-2%.952zm%.005 2%.508L6%.5 22%.863c%-%.667%.388%-1%.5%-%.096%-1%.5%-%.87V2%.006C5")
+          or not string.find(html, "M40 10H28%.62l%-2%.888%-5%-%.008%.004C25%.38 4%.407 24%.74 4 24 4H8c%-1%.105 0%-2 %.896%-2 2v36c0")
+          or not string.find(html, "<!%-%- %-%->")
+          or not string.find(html, "Question__userName")
+          or not string.find(html, '<div id="ans%-posting%-card%-' .. item_value .. '"></div>')
+        )
+      ) then
+      io.stdout:write("Bad response content.\n")
+      io.stdout:flush()
+      abort_item()
+    end
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
