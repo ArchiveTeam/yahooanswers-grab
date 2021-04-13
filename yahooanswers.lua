@@ -21,6 +21,7 @@ local exit_url = false
 local outlinks = {}
 local discovered = {}
 local discovered_all = {}
+local discovered_count_qid = 0
 local discovered_count = 0
 
 local allowed_urls = {}
@@ -140,6 +141,9 @@ discover_item = function(type_, value, target)
   target[item] = true
   discovered_all[item] = true
   discovered_count = discovered_count + 1
+  if type_ == "qid" then
+    discovered_count_qid = discovered_count_qid + 1
+  end
   if discovered_count == 100 then
     return submit_discovered()
   end
@@ -388,6 +392,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
+      discovered_count_qid = 0
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
       if jg(data, {"question", "qid"}) ~= item_value then
         io.stdout:write("Wrong qid found on webpage.\n")
@@ -539,6 +544,13 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     for newurl in string.gmatch(html, ':%s*url%(([^%)"]+)%)') do
       checknewurl(newurl)
+    end
+    if item_type == "qid"
+      and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
+      and discovered_count_qid < 8 then
+      io.stdout:write("Did not discover enough qid items.\n")
+      io.stdout:flush()
+      abort_item()
     end
   end
 
