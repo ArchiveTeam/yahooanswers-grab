@@ -388,7 +388,6 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
-print(string.gsub(data, "&quot;", '"'))
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
       if jg(data, {"question", "qid"}) ~= item_value then
         io.stdout:write("Wrong qid found on webpage.\n")
@@ -412,18 +411,32 @@ print(string.gsub(data, "&quot;", '"'))
           state="CREATED"
         }
       })
-      if jg(data, {"question", "answerCount"}) > 10 then
+      local answer_count = jg(data, {"question", "answerCount"})
+      if answer_count > 0 then
         --[[for _, sort in pairs({"RELEVANCE", "RATING", "OLDEST", "NEWEST"}) do
           question_answers(1, 20, item_value, lang, sort)
         end]]
-        if not jg(data, {"questionAnswersList", item_value}) then
+        local answers_list = jg(data, {"questionAnswersList", item_value})
+        if not answers_list then
           io.stdout:write("Incomplete JSON data.\n")
           io.stdout:flush()
           abort_item()
         end
-        sort_type = jg(data, {"questionAnswersList", item_value, "sortType"})
-        question_answers(1, 10, item_value, lang, sort_type)
-        question_answers(11, 20, item_value, lang, sort_type)
+        for _, answer_data in pairs(jg(answers_list, {"answers"})) do
+          if not jg(answer_data, {"isAnonymous"}) then
+            local kid = jg(answer_data, {"answerer", "kid"})
+            if not string.find(html, 'href="/activity/questions%?show=' .. kid .. '"') then
+              io.stdout:write("Answer content not in HTML.\n")
+              io.stdout:flush()
+              abort_item()
+            end
+          end
+        end
+        if answer_count > 10 then
+          sort_type = jg(answers_list, {"sortType"})
+          question_answers(1, 10, item_value, lang, sort_type)
+          question_answers(11, 20, item_value, lang, sort_type)
+        end
       end
     end
     if string.find(url, "/_reservice_/") then
