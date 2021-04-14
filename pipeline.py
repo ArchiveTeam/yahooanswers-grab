@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import string
+import random
 
 import seesaw
 from seesaw.externalprocess import WgetDownload
@@ -59,8 +60,8 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210413.07'
-USER_AGENT = 'ArchiveTeam'
+VERSION = '20210415.01'
+#USER_AGENT = 'ArchiveTeam'
 PROJECT_ID = 'yahooanswers'
 TRACKER_ID = PROJECT_ID + '2'
 TRACKER_HOST = 'legacy-api.arpa.li'
@@ -225,11 +226,12 @@ class ZstdDict(object):
 
 class WgetArgs(object):
     def realize(self, item):
+        with open('user-agents', 'r') as f:
+            user_agent = random.choice(list(f)).strip()
         wget_args = [
             WGET_AT,
-            '-U', USER_AGENT,
+            '-U', user_agent,
             '-nv',
-            '--load-cookies', 'cookies.txt',
             '--content-on-error',
             '--no-http-keep-alive',
             '--lua-script', PROJECT_ID + '.lua',

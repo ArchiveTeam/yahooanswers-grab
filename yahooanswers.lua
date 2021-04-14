@@ -21,7 +21,6 @@ local exit_url = false
 local outlinks = {}
 local discovered = {}
 local discovered_all = {}
-local discovered_count_qid = 0
 local discovered_count = 0
 
 local allowed_urls = {}
@@ -141,9 +140,6 @@ discover_item = function(type_, value, target)
   target[item] = true
   discovered_all[item] = true
   discovered_count = discovered_count + 1
-  if type_ == "qid" then
-    discovered_count_qid = discovered_count_qid + 1
-  end
   if discovered_count == 100 then
     return submit_discovered()
   end
@@ -392,10 +388,20 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
-      discovered_count_qid = 0
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
       if jg(data, {"question", "qid"}) ~= item_value then
         io.stdout:write("Wrong qid found on webpage.\n")
+        io.stdout:flush()
+        abort_item()
+      end
+      local question_count = 0
+      for s in string.gmatch(html, '"/question/index%?qid=([0-9a-zA-Z]+)"') do
+        if s ~= item_value then
+          question_count = question_count + 1
+        end
+      end
+      if question_count ~= 10 then
+        io.stdout:write("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         io.stdout:flush()
         abort_item()
       end
@@ -427,7 +433,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           io.stdout:flush()
           abort_item()
         end
+        local questions_count = 0
         for _, answer_data in pairs(jg(answers_list, {"answers"})) do
+          questions_count = questions_count + 1
           if not jg(answer_data, {"isAnonymous"}) then
             local kid = jg(answer_data, {"answerer", "kid"})
             if not string.find(html, 'href="/activity/questions%?show=' .. kid .. '"') then
@@ -436,6 +444,18 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
               abort_item()
             end
           end
+        end
+        local page_answers_count = jg(answers_list, {"count"})
+        if questions_count ~= page_answers_count then
+          io.stdout:write("Unexpected number of answers found.\n")
+          io.stdout:flush()
+          abort_item()
+        end
+        if (page_answers_count < 10 or answer_count < 11)
+          and page_answers_count ~= answer_count then
+          io.stdout:write("All answers should be on the webpage.\n")
+          io.stdout:flush()
+          abort_item()
         end
         if answer_count > 10 then
           sort_type = jg(answers_list, {"sortType"})
@@ -446,13 +466,27 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     if string.find(url, "/_reservice_/") then
       local data = JSON:decode(html)
+      local payload_count = 0
+      for _ in pairs(jg(data, {"payload"})) do
+        payload_count = payload_count + 1
+      end
       if jg(data, {"error"}) then
         io.stdout:write("Bad /_reservice_/ response.\n")
         io.stdout:flush()
         abort_item()
       end
+      if payload_count == 0 then
+        io.stdout:write("Empty payload!\n")
+        io.stdout:flush()
+        abort_item()
+      end
       if jg(data, {"type"}) == "FETCH_EXTRA_QUESTION_LIST_END" then
         local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
+        if payload_count ~= 3 then
+          io.stdout:write("Expected payload size 3, got " .. tostring(payload_count) .. ".\n")
+          io.stdout:flush()
+          abort_item()
+        end
         --[[for _, d in pairs(jg(data, {"payload"})) do
           reservice({
             type="CALL_RESERVICE",
@@ -492,7 +526,28 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         local orig_count = jg(data, {"reservice", "previous_action", "payload", "count"})
         if jg(data, {"reservice", "previous_action", "payload", "qid"}) == item_value
           and orig_count ~= 10 then
-          local new_start = jg(data, {"payload", "start"}) + jg(data, {"payload", "count"})
+          local payload_count = jg(data, {"payload", "count"})
+          local payload_start = jg(data, {"payload", "start"})
+          local payload_count_actual = 0
+          for _ in pairs(jg(data, {"payload", "answers"})) do
+            payload_count_actual = payload_count_actual + 1
+          end
+          if payload_count_actual ~= payload_count then
+            io.stdout:write("Expected " .. tostring(payload_count) .. " answers, got " .. tostring(payload_count_actual) .. " answers.\n")
+            io.stdout:flush()
+            abort_item()
+          end
+          if payload_start ~= jg(data, {"reservice", "previous_action", "payload", "start"}) then
+            io.stdout:write("Bad answers payload start.\n")
+            io.stdout:flush()
+            abort_item()
+          end
+          if jg(data, {"payload", "qid"}) ~= item_value then
+            io.stdout:write("Bad qid in JSON response.\n")
+            io.stdout:flush()
+            abort_item()
+          end
+          local new_start = payload_start + payload_count
           local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
           local sort = jg(data, {"reservice", "previous_action", "payload", "sortType"})
           if jg(data, {"payload", "count"}) == orig_count then
@@ -512,6 +567,12 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       io.stdout:flush()
       abort_item()
     end
+    if string.match(html, '"payload"%s*:%s*%[%]')
+      or string.match(html, '"payload"%s*:%s*{}') then
+      io.stdout:write("Incomplete JSON data.\n")
+      io.stdout:flush()
+      abort_item()
+    end
     for s in string.gmatch(html, '"qid"%s*:%s*"([0-9a-zA-Z_%-]+)"') do
       discover_item("qid", s)
     end
@@ -522,9 +583,11 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       allowed_urls[newurl] = true
       checknewurl(newurl)
     end
-    for s in string.gmatch(html, '"text"%s*:%s*"([^"]+)"') do
-      for newurl in string.gmatch(s, "(https?://[^%s\\%)]+)") do
-        discover_item(nil, newurl, "urls")
+    for _, variable in pairs({"text", "reference"}) do
+      for s in string.gmatch(html, '"' .. variable .. '"%s*:%s*"([^"]+)"') do
+        for newurl in string.gmatch(s, "(https?://[^%s\\%)]+)") do
+          discover_item(nil, newurl, "urls")
+        end
       end
     end
     for newurl in string.gmatch(html, '([^"]+)') do
@@ -544,13 +607,6 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     for newurl in string.gmatch(html, ':%s*url%(([^%)"]+)%)') do
       checknewurl(newurl)
-    end
-    if item_type == "qid"
-      and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
-      and discovered_count_qid < 10 then
-      io.stdout:write("Did not discover enough qid items.\n")
-      io.stdout:flush()
-      abort_item()
     end
   end
 
