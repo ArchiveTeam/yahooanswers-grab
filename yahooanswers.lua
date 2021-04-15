@@ -446,13 +446,21 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           end
         end
         local page_answers_count = jg(answers_list, {"count"})
+        local flags_count = nil
         if questions_count ~= page_answers_count then
-          io.stdout:write("Unexpected number of answers found.\n")
-          io.stdout:flush()
-          abort_item()
+          flags_count = 0
+          for _ in string.gmatch(html, 'data%-icon="flag"') do
+            flags_count = flags_count + 1
+          end
+          if flags_count - 1 ~= page_answers_count then
+            io.stdout:write("Unexpected number of answers found.\n")
+            io.stdout:flush()
+            abort_item()
+          end
         end
         if (page_answers_count < 10 or answer_count < 11)
-          and page_answers_count ~= answer_count then
+          and page_answers_count ~= answer_count
+          and not (flags_count ~= nil and page_answers_count - 1 == answer_count) then
           io.stdout:write("All answers should be on the webpage.\n")
           io.stdout:flush()
           abort_item()
