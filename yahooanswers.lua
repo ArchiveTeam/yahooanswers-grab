@@ -89,7 +89,7 @@ submit_discovered = function()
       local tries = 0
       while tries < 10 do
         local body, code, headers, status = http.request(
-          "http://blackbird-amqp.meo.ws:23038/" .. key .. "/",
+          "http://blackbird.arpa.li:23038/" .. key .. "/",
           items
         )
         if code == 200 or code == 409 then
