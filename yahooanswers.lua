@@ -669,6 +669,7 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
 
   if abortgrab then
     abort_item(true)
+    submit_discovered()
     return wget.actions.ABORT
     --return wget.actions.EXIT
   end
@@ -747,6 +748,7 @@ end
 wget.callbacks.before_exit = function(exit_status, exit_status_string)
   if abortgrab then
     abort_item()
+    submit_discovered()
     return wget.exits.IO_FAIL
   end
   return exit_status
