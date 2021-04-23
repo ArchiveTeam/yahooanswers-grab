@@ -402,6 +402,17 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     reservice(data)
   end
 
+  local function set_intl(s)
+    if s == "e1" then
+      s = "espanol"
+    elseif s == "my" then
+      s = "malaysia"
+    end
+    if s == "us" or languages[s] then
+      intl = s
+    end
+  end
+
   local a, b = string.match(url, "^(https?://s%.yimg%.com/.+/[0-9a-f]+)_[A-Z](%.[0-9a-zA-Z]+)$")
   if a and b then
     for _, c in pairs({"A", "C"}) do
@@ -453,10 +464,8 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         write_message("No euid found.\n")
         abort_item()
       end
-      local temp_intl = string.lower(string.match(jg(profile_user, {"lang"}), "([^%-]+)$"))
-      if temp_intl == "us" or languages[temp_intl] then
-        intl = temp_intl
-      else
+      set_intl(string.lower(string.match(jg(profile_user, {"lang"}), "([^%-]+)$")))
+      if not intl then
         write_message("Language not found.\n")
         abort_item()
       end
@@ -505,10 +514,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         write_message("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         abort_item()
       end
-      local temp_intl = jg(data, {"question", "intl"})
-      if temp_intl == "us" or languages[temp_intl] then
-        intl = temp_intl
-      end
+      set_intl(jg(data, {"question", "intl"}))
       local lang = jg(data, {"question", "lang"})
       reservice({
         type="CALL_RESERVICE",
