@@ -59,6 +59,11 @@ abort_item = function(abort)
   end
 end
 
+write_message = function(s)
+  io.stdout:write(s)
+  io.stdout:flush()
+end
+
 read_file = function(file)
   if file then
     local f = assert(io.open(file))
@@ -71,8 +76,7 @@ read_file = function(file)
 end
 
 submit_discovered = function()
-  io.stdout:write("Submitting " .. tostring(discovered_count) .. " items.\n")
-  io.stdout:flush()
+  write_message("Submitting " .. tostring(discovered_count) .. " items.\n")
   for key, table in pairs({
     ["yahooanswers2-avt8l5qey8tzzf3"]=discovered,
     ["urls-jzgws2r0z10phee"]=outlinks
@@ -95,8 +99,7 @@ submit_discovered = function()
         if code == 200 or code == 409 then
           break
         end
-        io.stdout:write("Could not queue items.\n")
-        io.stdout:flush()
+        write_message("Could not queue items.\n")
         os.execute("sleep " .. math.floor(math.pow(2, tries)))
         tries = tries + 1
       end
@@ -129,8 +132,7 @@ discover_item = function(type_, value, target)
     end
     target = outlinks
   else
-    io.stdout:write("Bad items target.\n")
-    io.stdout:flush()
+    write_message("Bad items target.\n")
     abort_item()
   end
   if item == item_name or discovered_all[item] then
@@ -301,8 +303,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
   local function jg(json, location) -- json_get
     for _, s in pairs(location) do
       if not json or json[s] == nil then
-        io.stdout:write("Could not find key " .. s .. " in " .. JSON:encode(json) .. ".\n")
-        io.stdout:flush()
+        write_message("Could not find key " .. s .. " in " .. JSON:encode(json) .. ".\n")
         abort_item()
         return false
       end
@@ -353,6 +354,51 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
   end
 
+  local function user_questions(start, count, euid, relation)
+    reservice({
+      type="CALL_RESERVICE",
+      payload={
+        relation=relation,
+        start=start,
+        count=count,
+        euid=euid
+      },
+      reservice={
+        name="FETCH_USER_QUESTIONS_END",
+        start="FETCH_USER_QUESTIONS_START",
+        state="CREATED"
+      },
+      kvPayload={
+        key=relation,
+        kvActionPrefix="KV/userQuestions/"
+      }
+    })
+  end
+
+  local function user_network(start, count, euid, network_type)
+    data = {
+      type="CALL_RESERVICE",
+      payload={
+        euid=euid,
+        networkType=network_type,
+        count=count
+      },
+      reservice={
+        name="FETCH_USER_NETWORK_END",
+        start="FETCH_USER_NETWORK_START",
+        state="CREATED"
+      },
+      kvPayload={
+        key=network_type,
+        kvActionPrefix="KV/userNetwork/"
+      }
+    }
+    if start ~= nil then
+      data["payload"]["start"] = start
+    end
+    reservice(data)
+  end
+
   local a, b = string.match(url, "^(https?://s%.yimg%.com/.+/[0-9a-f]+)_[A-Z](%.[0-9a-zA-Z]+)$")
   if a and b then
     for _, c in pairs({"A", "C"}) do
@@ -360,6 +406,12 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       allowed_urls[newurl] = true
       check(newurl)
     end
+  end
+
+  if string.match(url, "^https?://[^/]*yimg%.com/.+_192sq%.") then
+    local newurl = string.gsub(url, "_192sq", "")
+    allowed_urls[newurl] = true
+    checknewurl(newurl)
   end
 
   if (allowed(url, nil) and status_code == 200)
@@ -381,17 +433,63 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           or not string.find(html, '<div id="ans%-posting%-card%-' .. item_value .. '"></div>')
         )
       ) then
-      io.stdout:write("Bad response content.\n")
-      io.stdout:flush()
+      write_message("Bad response content.\n")
       abort_item()
+    end
+    if item_type == "kid"
+      and string.match(url, "^https?://[^/]*answers%.yahoo%.com/activity/questions%?show=") then
+      local data = string.match(html, 'data%-state="({.-})">')
+      data = JSON:decode(string.gsub(data, "&quot;", '"'))
+      local profile_user = jg(data, {"profile", "profileUser"})
+      if jg(profile_user, {"kid"}) ~= item_value then
+        write_message("Wrong kid found on webpage.\n")
+        abort_item()
+      end
+      euid = jg(profile_user, {"euid"})
+      if not euid then
+        write_message("No euid found.\n")
+        abort_item()
+      end
+      local temp_intl = string.lower(string.match(jg(profile_user, {"lang"}), "([^%-]+)$"))
+      if temp_intl == "us" or languages[temp_intl] then
+        intl = temp_intl
+      else
+        write_message("Language not found.\n")
+        abort_item()
+      end
+      for _, question in pairs(jg(data, {"userQuestionsList", "ASKED", "questions"})) do
+        if not string.find(html, "/question/index%?qid=" .. jg(question, {"qid"})) then
+          write_message("Question content not in HTML.\n")
+          abort_item()
+        end
+      end
+      user_questions(1, 20, euid, "ASKED")
+      user_questions(1, 20, euid, "ANSWERED")
+      user_questions(1, 20, euid, "FOLLOWING")
+      user_network(nil, 20, euid, "contacts")
+      user_network(nil, 20, euid, "followers")
+      reservice({
+        type="CALL_RESERVICE",
+        payload={
+          euid=euid
+        },
+        reservice={
+          name="FETCH_USER_INFO_END",
+          start="FETCH_USER_INFO_START",
+          state="CREATED"
+        },
+        kvPayload={
+          key=euid,
+          kvActionPrefix="KV/queriedUsers/"
+        }
+      })
     end
     if item_type == "qid"
       and string.match(url, "^https://[^/]*answers%.yahoo%.com/question/index%?qid=") then
       local data = string.match(html, 'data%-state="({.-})">')
       data = JSON:decode(string.gsub(data, "&quot;", '"'))
       if jg(data, {"question", "qid"}) ~= item_value then
-        io.stdout:write("Wrong qid found on webpage.\n")
-        io.stdout:flush()
+        write_message("Wrong qid found on webpage.\n")
         abort_item()
       end
       local question_count = 0
@@ -401,8 +499,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         end
       end
       if question_count ~= 10 then
-        io.stdout:write("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
-        io.stdout:flush()
+        write_message("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         abort_item()
       end
       local temp_intl = jg(data, {"question", "intl"})
@@ -429,8 +526,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         end]]
         local answers_list = jg(data, {"questionAnswersList", item_value})
         if not answers_list then
-          io.stdout:write("Incomplete JSON data.\n")
-          io.stdout:flush()
+          write_message("Incomplete JSON data.\n")
           abort_item()
         end
         local questions_count = 0
@@ -439,8 +535,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           if not jg(answer_data, {"isAnonymous"}) then
             local kid = jg(answer_data, {"answerer", "kid"})
             if not string.find(html, 'href="/activity/questions%?show=' .. kid .. '"') then
-              io.stdout:write("Answer content not in HTML.\n")
-              io.stdout:flush()
+              write_message("Answer content not in HTML.\n")
               abort_item()
             end
           end
@@ -453,16 +548,14 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             flags_count = flags_count + 1
           end
           if flags_count - 1 ~= page_answers_count then
-            io.stdout:write("Unexpected number of answers found.\n")
-            io.stdout:flush()
+            write_message("Unexpected number of answers found.\n")
             abort_item()
           end
         end
         if (page_answers_count < 10 or answer_count < 11)
           and page_answers_count ~= answer_count
           and not (flags_count ~= nil and page_answers_count - 1 == answer_count) then
-          io.stdout:write("All answers should be on the webpage.\n")
-          io.stdout:flush()
+          write_message("All answers should be on the webpage.\n")
           abort_item()
         end
         if answer_count > 10 then
@@ -479,20 +572,18 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         payload_count = payload_count + 1
       end
       if jg(data, {"error"}) then
-        io.stdout:write("Bad /_reservice_/ response.\n")
-        io.stdout:flush()
+        write_message("Bad /_reservice_/ response.\n")
         abort_item()
       end
       if payload_count == 0 then
-        io.stdout:write("Empty payload!\n")
-        io.stdout:flush()
+        write_message("Empty payload!\n")
         abort_item()
       end
-      if jg(data, {"type"}) == "FETCH_EXTRA_QUESTION_LIST_END" then
+      local reservice_type = jg(data, {"type"})
+      if reservice_type == "FETCH_EXTRA_QUESTION_LIST_END" then
         local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
         if payload_count ~= 3 then
-          io.stdout:write("Expected payload size 3, got " .. tostring(payload_count) .. ".\n")
-          io.stdout:flush()
+          write_message("Expected payload size 3, got " .. tostring(payload_count) .. ".\n")
           abort_item()
         end
         --[[for _, d in pairs(jg(data, {"payload"})) do
@@ -530,40 +621,93 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             }
           })
         end]]
-      elseif jg(data, {"type"}) == "FETCH_QUESTION_ANSWERS_END" then
+      elseif reservice_type == "FETCH_USER_INFO_END" then
+        local newurl = jg(data, {"payload", "imageUrl"})
+        allowed_urls[newurl] = true
+        checknewurl(newurl)
+      elseif reservice_type == "FETCH_QUESTION_ANSWERS_END"
+        or reservice_type == "FETCH_USER_QUESTIONS_END"
+        or reservice_type == "FETCH_USER_NETWORK_END" then
         local orig_count = jg(data, {"reservice", "previous_action", "payload", "count"})
-        if jg(data, {"reservice", "previous_action", "payload", "qid"}) == item_value
-          and orig_count ~= 10 then
+        local orig_start = jg(data, {"reservice", "previous_action", "payload"})
+        if reservice_type ~= "FETCH_USER_NETWORK_END" then
+          orig_start = jg(orig_start, {"start"})
+        else
+          orig_start = orig_start["start"]
+        end
+        if item_type == "kid"
+          or (
+            jg(data, {"reservice", "previous_action", "payload", "qid"}) == item_value
+            and orig_count ~= 10
+          ) then
+          if item_type == "kid"
+            and data["payload"]["apiError"]
+            and data["payload"]["status"] == 403 then
+            return urls
+          end
           local payload_count = jg(data, {"payload", "count"})
-          local payload_start = jg(data, {"payload", "start"})
           local payload_count_actual = 0
-          for _ in pairs(jg(data, {"payload", "answers"})) do
+          local payload_list = nil
+          if reservice_type == "FETCH_QUESTION_ANSWERS_END" then
+            payload_list = jg(data, {"payload", "answers"})
+          elseif reservice_type == "FETCH_USER_QUESTIONS_END" then
+            payload_list = jg(data, {"payload", "questions"})
+          elseif reservice_type == "FETCH_USER_NETWORK_END" then
+            payload_list = jg(data, {"payload", "users"})
+          else
+            write_message("Unexpected reservice type.\n")
+            abort_item()
+          end
+          for _ in pairs(payload_list) do
             payload_count_actual = payload_count_actual + 1
           end
           if payload_count_actual ~= payload_count then
-            io.stdout:write("Expected " .. tostring(payload_count) .. " answers, got " .. tostring(payload_count_actual) .. " answers.\n")
-            io.stdout:flush()
+            write_message("Expected " .. tostring(payload_count) .. " answers, got " .. tostring(payload_count_actual) .. " answers.\n")
             abort_item()
           end
-          if payload_start ~= jg(data, {"reservice", "previous_action", "payload", "start"}) then
-            io.stdout:write("Bad answers payload start.\n")
-            io.stdout:flush()
-            abort_item()
-          end
-          if jg(data, {"payload", "qid"}) ~= item_value then
-            io.stdout:write("Bad qid in JSON response.\n")
-            io.stdout:flush()
-            abort_item()
-          end
-          local new_start = payload_start + payload_count
-          local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
-          local sort = jg(data, {"reservice", "previous_action", "payload", "sortType"})
-          if jg(data, {"payload", "count"}) == orig_count then
-            question_answers(new_start, orig_count, jg(data, {"payload", "qid"}), lang, sort)
-          elseif new_start - 1 ~= jg(data, {"payload", "answerCount"}) then
-            io.stdout:write("/_reservice_/ did not return all answers.\n")
-            io.stdout:flush()
-            abort_item()
+          if reservice_type == "FETCH_QUESTION_ANSWERS_END" then
+            local payload_start = jg(data, {"payload", "start"})
+            if payload_start ~= orig_start then
+              write_message("Bad answers payload start.\n")
+              abort_item()
+            end
+            if jg(data, {"payload", "qid"}) ~= item_value then
+              write_message("Bad qid in JSON response.\n")
+              abort_item()
+            end
+            local new_start = payload_start + payload_count
+            local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
+            local sort = jg(data, {"reservice", "previous_action", "payload", "sortType"})
+            if jg(data, {"payload", "count"}) == orig_count then
+              question_answers(new_start, orig_count, jg(data, {"payload", "qid"}), lang, sort)
+            elseif new_start - 1 ~= jg(data, {"payload", "answerCount"}) then
+              write_message("/_reservice_/ did not return all answers.\n")
+              abort_item()
+            end
+          else
+            local euid = jg(data, {"reservice", "previous_action", "payload", "euid"})
+            if reservice_type == "FETCH_USER_QUESTIONS_END" then
+              if payload_count > 0 then
+                user_questions(
+                  orig_start + payload_count,
+                  orig_count,
+                  euid,
+                  jg(data, {"reservice", "previous_action", "payload", "relation"})
+                )
+              end
+            elseif reservice_type == "FETCH_USER_NETWORK_END" then
+              if orig_start == nil then
+                orig_start = 1
+              end
+              if payload_count > 0 then
+                user_network(
+                  orig_start + payload_count,
+                  orig_count,
+                  euid,
+                  jg(data, {"reservice", "previous_action", "payload", "networkType"})
+                )
+              end
+            end
           end
         end
       end
@@ -571,14 +715,12 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     html = string.gsub(html, "&quot;", '"')
     html = string.gsub(html, "&#039;", "'")
     if string.match(html, '"[^"]*captcha[^"]*"%s*:%s*true') then
-      io.stdout:write("Something is up with recaptcha here!.\n")
-      io.stdout:flush()
+      write_message("Something is up with recaptcha here!.\n")
       abort_item()
     end
     if string.match(html, '"payload"%s*:%s*%[%]')
       or string.match(html, '"payload"%s*:%s*{}') then
-      io.stdout:write("Incomplete JSON data.\n")
-      io.stdout:flush()
+      write_message("Incomplete JSON data.\n")
       abort_item()
     end
     for s in string.gmatch(html, '"qid"%s*:%s*"([0-9a-zA-Z_%-]+)"') do
@@ -655,7 +797,10 @@ end
 wget.callbacks.write_to_warc = function(url, http_stat)
   set_new_item(url["url"])
   if exitgrab
+    or http_stat["statcode"] == 0
     or http_stat["statcode"] == 500
+    or http_stat["statcode"] == 503
+    or http_stat["statcode"] == 504
     or http_stat["statcode"] == 429 then
     io.stdout:write("Not writing WARC record.\n")
     io.stdout:flush()
@@ -695,6 +840,12 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   
   if status_code >= 200 and status_code <= 399 then
     downloaded[url["url"]] = true
+  end
+
+  if (item_type == "kid" or string.match(url["url"], "^https?://[^/]*yahoo%.com/"))
+    and status_code == 404 then
+    write_message("Possible bad 404 found.\n")
+    abort_item()
   end
 
   if status_code == 0

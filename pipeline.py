@@ -60,7 +60,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210421.01'
+VERSION = '20210423.01'
 #USER_AGENT = 'ArchiveTeam'
 PROJECT_ID = 'yahooanswers'
 TRACKER_ID = PROJECT_ID + '2'
@@ -281,9 +281,8 @@ class WgetArgs(object):
                 wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
             elif item_type == 'kid':
-                raise ValueError('item_type not supported yet. this item will now abort, this error is expected')
-                #wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
-                #wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
+                wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
+                wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
             elif item_type == 'dir':
                 raise ValueError('item_type not supported yet. this item will now abort, this error is expected')
                 #wget_args.extend(['--warc-header', 'yahooanswers-category: '+item_value])
@@ -324,7 +323,7 @@ pipeline = Pipeline(
     PrepareDirectories(warc_prefix=PROJECT_ID),
     WgetDownload(
         WgetArgs(),
-        max_tries=2,
+        max_tries=1,
         accept_on_exit_code=[0, 4, 8],
         env={
             'item_dir': ItemValue('item_dir'),
