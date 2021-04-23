@@ -315,6 +315,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
   local function reservice(data)
     data = JSON:encode(data)
     local base_url = string.match(url, "^(https?://[^/]+)")
+    if not string.match(base_url, "//answers%.yahoo%.com$") then
+      return nil
+    end
     local identification = base_url .. data
     if not addedtolist[identification] then
       print("PUT", base_url, data)
