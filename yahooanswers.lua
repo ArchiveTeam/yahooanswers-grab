@@ -514,18 +514,6 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       end
       set_intl(jg(data, {"question", "intl"}))
       local lang = jg(data, {"question", "lang"})
-      reservice({
-        type="CALL_RESERVICE",
-        payload={
-          qid=item_value,
-          lang=lang
-        },
-        reservice={
-          name="FETCH_EXTRA_QUESTION_LIST_END",
-          start="FETCH_EXTRA_QUESTION_LIST_START",
-          state="CREATED"
-        }
-      })
       local answer_count = jg(data, {"question", "answerCount"})
       if answer_count > 0 then
         --[[for _, sort in pairs({"RELEVANCE", "RATING", "OLDEST", "NEWEST"}) do
@@ -571,6 +559,18 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           question_answers(11, 20, item_value, lang, sort_type)
         end
       end
+      reservice({
+        type="CALL_RESERVICE",
+        payload={
+          qid=item_value,
+          lang=lang
+        },
+        reservice={
+          name="FETCH_EXTRA_QUESTION_LIST_END",
+          start="FETCH_EXTRA_QUESTION_LIST_START",
+          state="CREATED"
+        }
+      })
     end
     if string.find(url, "/_reservice_/") then
       local data = JSON:decode(html)
