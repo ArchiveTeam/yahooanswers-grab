@@ -507,7 +507,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           question_count = question_count + 1
         end
       end
-      local min_questions = 5
+      local min_questions = 1
       if question_count < min_questions then
         write_message("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         abort_item()
