@@ -169,11 +169,8 @@ allowed = function(url, parenturl)
     tested[s] = tested[s] + 1
   end
 
-  if intl then
-    local match = string.match(url, "^https?://([^%.]+)%.answers%.yahoo%.com/")
-    if match and match ~= intl then
-      return false
-    end
+  if string.match(url, "^https?://[^%.]+%.answers%.yahoo%.com/") then
+    return false
   end
 
   for _, pattern in pairs({"([0-9a-zA-Z]+)", "([0-9]+)"}) do
@@ -510,10 +507,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           question_count = question_count + 1
         end
       end
-      local min_questions = 10
-      if string.match(url, "^https?://[^%.]+%.answers%.yahoo%.com/") then
-        min_questions = 6
-      end
+      local min_questions = 5
       if question_count < min_questions then
         write_message("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         abort_item()
