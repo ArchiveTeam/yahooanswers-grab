@@ -582,14 +582,18 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         write_message("Bad /_reservice_/ response.\n")
         abort_item()
       end
-      if payload_count == 0 then
+      local reservice_type = jg(data, {"type"})
+      if payload_count == 0
+        and reservice_type ~= "FETCH_EXTRA_QUESTION_LIST_END" then
         write_message("Empty payload!\n")
         abort_item()
       end
-      local reservice_type = jg(data, {"type"})
       if reservice_type == "FETCH_EXTRA_QUESTION_LIST_END" then
         local lang = jg(data, {"reservice", "previous_action", "payload", "lang"})
         if payload_count ~= 3 then
+          if intl == "tw" or intl == "th" or intl == "hk" then
+            return urls
+          end
           write_message("Expected payload size 3, got " .. tostring(payload_count) .. ".\n")
           abort_item()
         end
