@@ -169,18 +169,6 @@ allowed = function(url, parenturl)
     tested[s] = tested[s] + 1
   end
 
-  if string.match(url, "^https?://[^%.]+%.answers%.yahoo%.com/") then
-    return false
-  end
-
-  for _, pattern in pairs({"([0-9a-zA-Z]+)", "([0-9]+)"}) do
-    for s in string.gmatch(url, pattern) do
-      if ids[s] then
-        return true
-      end
-    end
-  end
-
   local match = string.match(url, "[%?&]qid=([0-9a-zA-Z_%-]+)")
   if match then
     discover_item("qid", match)
@@ -192,6 +180,18 @@ allowed = function(url, parenturl)
   match = string.match(url, "/dir/index%?sid=([0-9]+)")
   if match then
     discover_item("dir", match)
+  end
+
+  if string.match(url, "^https?://[^%.]+%.answers%.yahoo%.com/") then
+    return false
+  end
+
+  for _, pattern in pairs({"([0-9a-zA-Z]+)", "([0-9]+)"}) do
+    for s in string.gmatch(url, pattern) do
+      if ids[s] then
+        return true
+      end
+    end
   end
 
   return false
