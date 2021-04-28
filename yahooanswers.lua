@@ -501,7 +501,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         write_message("Wrong qid found on webpage.\n")
         abort_item()
       end
-      local question_count = 0
+      --[[local question_count = 0
       for s in string.gmatch(html, '"/question/index%?qid=([0-9a-zA-Z]+)"') do
         if s ~= item_value then
           question_count = question_count + 1
@@ -511,7 +511,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       if question_count < min_questions then
         write_message("Found bad number of related questions at " .. tostring(question_count) .. ".\n")
         abort_item()
-      end
+      end]]
       set_intl(jg(data, {"question", "intl"}))
       local lang = jg(data, {"question", "lang"})
       local answer_count = jg(data, {"question", "answerCount"})
