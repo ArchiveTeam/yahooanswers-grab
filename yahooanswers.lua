@@ -17,6 +17,7 @@ local addedtolist = {}
 local abortgrab = false
 local exitgrab = false
 local exit_url = false
+local retry_url = false
 
 local outlinks = {}
 local discovered = {}
@@ -595,7 +596,8 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             return urls
           end
           write_message("Expected payload size 3, got " .. tostring(payload_count) .. ".\n")
-          abort_item()
+          return urls
+          --abort_item()
         end
         --[[for _, d in pairs(jg(data, {"payload"})) do
           reservice({
@@ -794,6 +796,7 @@ set_new_item = function(url)
   if match and not ids[match] then
     abortgrab = false
     exitgrab = false
+    retry_url = false
     sort_type = nil
     intl = nil
     ids[match] = true
@@ -807,6 +810,7 @@ end
 
 wget.callbacks.write_to_warc = function(url, http_stat)
   set_new_item(url["url"])
+  retry_url = false
   if exitgrab
     or http_stat["statcode"] == 0
     or http_stat["statcode"] == 500
@@ -816,6 +820,14 @@ wget.callbacks.write_to_warc = function(url, http_stat)
     io.stdout:write("Not writing WARC record.\n")
     io.stdout:flush()
     return false
+  end
+  if string.find(url["url"], "/_reservice_/") then
+    local data = read_file(http_stat["local_file"])
+    if string.match(data, '"message"%s*:%s*"network timeout at') then
+      write_message("Network timeout.\n")
+      retry_url = true
+      return false
+    end
   end
   return true
 end
@@ -856,6 +868,7 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   if (item_type == "kid" or string.match(url["url"], "^https?://[^/]*yahoo%.com/"))
     and status_code == 404 then
     write_message("Possible bad 404 found.\n")
+    os.execute("sleep 200")
     abort_item()
   end
 
@@ -864,10 +877,12 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
     or (
       string.match(url["url"], "^https://[^/]*answers%.yahoo%.com/question/index%?qid=")
       and status_code ~= 200 and status_code ~= 404
-    ) then
+    )
+    or retry_url then
+    retry_url = false
     io.stdout:write("Server returned " .. http_stat.statcode .. " (" .. err .. "). Sleeping.\n")
     io.stdout:flush()
-    local maxtries = 4
+    local maxtries = 10
     if tries >= maxtries then
       io.stdout:write("I give up...\n")
       io.stdout:flush()
@@ -875,7 +890,8 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
       if string.match(url["url"], "^https?://s%.yimg%.com/") and status_code == 403 then
         return wget.actions.EXIT
       end
-      if not allowed(url["url"], nil) then
+      if not allowed(url["url"], nil)
+        and not string.find(url["url"], "/_reservice_/") then
         return wget.actions.EXIT
       end
       abort_item(true)
