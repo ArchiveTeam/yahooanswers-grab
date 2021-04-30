@@ -676,7 +676,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           end
           if payload_count_actual ~= payload_count then
             write_message("Expected " .. tostring(payload_count) .. " answers, got " .. tostring(payload_count_actual) .. " answers.\n")
-            abort_item()
+            if payload_count - 1 ~= payload_count_actual then
+              abort_item()
+            end
           end
           if reservice_type == "FETCH_QUESTION_ANSWERS_END" then
             local payload_start = jg(data, {"payload", "start"})
