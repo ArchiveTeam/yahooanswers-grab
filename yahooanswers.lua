@@ -883,6 +883,9 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
     io.stdout:write("Server returned " .. http_stat.statcode .. " (" .. err .. "). Sleeping.\n")
     io.stdout:flush()
     local maxtries = 10
+    if status_code == 403 then
+      maxtries = 2
+    end
     if tries >= maxtries then
       io.stdout:write("I give up...\n")
       io.stdout:flush()
