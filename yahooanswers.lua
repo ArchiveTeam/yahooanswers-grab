@@ -311,6 +311,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
   end
 
   local function reservice(data)
+    if true then
+      return nil
+    end
     data = JSON:encode(data)
     local base_url = string.match(url, "^(https?://[^/]+)")
     if not string.match(base_url, "//answers%.yahoo%.com$") then
