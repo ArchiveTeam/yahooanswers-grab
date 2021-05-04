@@ -61,7 +61,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210505.01'
+VERSION = '20210505.02'
 #USER_AGENT = 'ArchiveTeam'
 PROJECT_ID = 'yahooanswers'
 TRACKER_ID = PROJECT_ID + '2'
@@ -279,10 +279,10 @@ class WgetArgs(object):
             wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
             wget_args.append('item-name://'+item_name)
             if item_type == 'qid':
-                wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
-                wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
+                raise ValueError('item_type not supported anymore. this item will now abort, this error is expected')
+                #wget_args.extend(['--warc-header', 'yahooanswers-qid: '+item_value])
+                #wget_args.append('https://answers.yahoo.com/question/index?qid='+item_value)
             elif item_type == 'kid':
-                #raise ValueError('item_type not supported yet. this item will now abort, this error is expected')
                 wget_args.extend(['--warc-header', 'yahooanswers-kid: '+item_value])
                 wget_args.append('https://answers.yahoo.com/activity/questions?show='+item_value)
             elif item_type == 'dir':
